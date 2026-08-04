@@ -1,0 +1,80 @@
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { Administradores } from "./admin.entities";
+
+@Entity('proyectos')
+export class Proyectos {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column({ type: 'varchar', length: 100 })
+    nombre!: string;
+
+    @Column({ type: 'varchar', length: 250 })
+    descripcion!: string;
+
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    registro!: Date;
+
+    @ManyToOne(() => Administradores)
+    @JoinColumn({ name: 'admin', referencedColumnName: 'id' })
+    admin!: Administradores | number;
+
+    @OneToMany(() => Usuarios, usuario => usuario.proyecto)
+    usuarios!: Usuarios[];
+}
+
+@Entity('usuarios')
+export class Usuarios {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column({ type: 'varchar', length: 100 })
+    nombre!: string;
+
+    @Column({ type: 'varchar', length: 100 })
+    apellido!: string;
+
+    @Column({ type: 'varchar', length: 255, unique: true })
+    cedula!: string;
+
+    @Column({ type: 'varchar', length: 255 })
+    clave!: string;
+
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    registro!: Date;
+
+    @Column({ type: 'varchar', length: 100 })
+    avatar!: string
+
+    @Column({ type: 'varchar', length: 100 })
+    telefono!: string;
+
+    @ManyToOne(() => Administradores)
+    @JoinColumn({ name: 'admin', referencedColumnName: 'id' })
+    admin!: Administradores | number;
+
+    @ManyToOne(() => Proyectos, proyecto => proyecto.usuarios)
+    @JoinColumn({ name: 'proyecto', referencedColumnName: 'id' })
+    proyecto!: Proyectos;
+
+    @OneToMany(() => Asistencia, asistencia => asistencia.usuario)
+    asistencias!: Asistencia[];
+}
+
+@Entity('asistencia')
+export class Asistencia {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @ManyToOne(() => Usuarios, usuario => usuario.asistencias, {
+        onDelete: 'CASCADE'
+    })
+    @JoinColumn({ name: 'usuario', referencedColumnName: 'id' })
+    usuario!: Usuarios | number;
+
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    registro!: Date;
+
+    @Column({ type: 'json', nullable: true })
+    ubicacion: { longitud: number, latitud: number }
+}
