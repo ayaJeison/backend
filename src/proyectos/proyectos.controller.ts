@@ -1,9 +1,10 @@
-import { Body, Controller, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Request, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { ProyectosService } from './proyectos.service';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../authGuard';
 import { tipoRespuesta } from '../interfaces';
 import { Proyectos, Usuarios } from '../entidades/proyectos.entities';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @SkipThrottle()
 @Controller('proyectos')
@@ -39,5 +40,20 @@ export class ProyectosController {
     @Post('crear-asistencia')
     async crearAsistencia(@Body() datos: { cedula: string, longitud: number, latitud: number }): Promise<tipoRespuesta> {
         return await this.proyectosService.createAsistencia(datos.cedula, datos.longitud, datos.latitud)
+    }
+
+    @Post('crear-asistencia-foto')
+    @UseInterceptors(FileInterceptor('imagen'))
+    async crearAsistenciaFoto(
+        @UploadedFile() imagen: Express.Multer.File,
+        @Body() datos: { longitud: string; latitud: string, cedula: string },
+    ): Promise<tipoRespuesta> {
+
+        return await this.proyectosService.crearAsistenciaFoto(
+            imagen,
+            datos.cedula,
+            Number(datos.longitud),
+            Number(datos.latitud),
+        );
     }
 }

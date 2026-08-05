@@ -37,8 +37,11 @@ export class Usuarios {
     @Column({ type: 'varchar', length: 255, unique: true })
     cedula!: string;
 
-    @Column({ type: 'varchar', length: 255 })
-    clave!: string;
+    @Column({
+        type: "json",
+        nullable: true
+    })
+    embedding!: number[];
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     registro!: Date;

@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { Asistencia, Proyectos, Usuarios } from '../entidades/proyectos.entities';
 import { tipoRespuesta } from '../interfaces';
+import axios from 'axios';
+import FormData from 'form-data';
 
 @Injectable()
 export class ProyectosService {
@@ -87,7 +89,7 @@ export class ProyectosService {
             const usuario = data;
             usuario.registro = new Date();
             usuario.admin = admin;
-            usuario.clave = "";
+            usuario.embedding = [];
             usuario.avatar = "";
             await this.usuariosRepository.save(usuario);
             return {
@@ -112,10 +114,31 @@ export class ProyectosService {
                     registro: new Date(),
                     ubicacion: { longitud, latitud }
                 }
+                const inicioDia = new Date();
+                inicioDia.setHours(0, 0, 0, 0);
+
+                const finDia = new Date();
+                finDia.setHours(23, 59, 59, 999);
+
+                const asistencia = await this.asistenciaRepository.findOne({
+                    where: {
+                        usuario: { id: usuario.id },
+                        registro: Between(inicioDia, finDia),
+                    }
+                });
+                if (asistencia) {
+                    return {
+                        tipo: 'error',
+                        mensaje: 'Ya existe una asistencia registrada para el usuario'
+                    }
+                }
                 await this.asistenciaRepository.save(nuevoRegistro)
                 return {
                     tipo: 'success',
-                    mensaje: 'Asistencia registrada con éxito'
+                    mensaje: 'Asistencia registrada con éxito',
+                    datos: {
+                        nombre: usuario.nombre
+                    }
                 }
             }
             return {
@@ -128,6 +151,122 @@ export class ProyectosService {
                 tipo: 'error',
                 mensaje: 'Error en el sistema'
             }
+        }
+    }
+
+    async crearAsistenciaFoto(
+        imagen: Express.Multer.File,
+        cedula: string,
+        longitud: number,
+        latitud: number,
+    ): Promise<tipoRespuesta> {
+        try {
+
+            const usuario = await this.usuariosRepository.findOneBy({
+                cedula
+            });
+
+            if (!usuario) {
+                return {
+                    tipo: 'error',
+                    mensaje: 'El usuario a validar no existe'
+                };
+            }
+
+            // -----------------------------
+            // Usuario ya tiene embedding
+            // -----------------------------
+            if (usuario.embedding && usuario.embedding.length > 0) {
+
+                const formData = new FormData();
+
+                formData.append(
+                    'image',
+                    imagen.buffer,
+                    {
+                        filename: imagen.originalname,
+                        contentType: imagen.mimetype,
+                    },
+                );
+
+                formData.append(
+                    'embedding',
+                    JSON.stringify(usuario.embedding)
+                );
+
+                const respuesta = await axios.post(
+                    'http://127.0.0.1:5000/verify',
+                    formData,
+                    {
+                        headers: formData.getHeaders(),
+                    },
+                );
+
+                const resultado = respuesta.data;
+
+                if (resultado.tipo !== 'success') {
+                    return resultado;
+                }
+
+                if (!resultado.datos.match) {
+                    return {
+                        tipo: 'error',
+                        mensaje: 'El rostro no coincide con el usuario.'
+                    };
+                }
+
+                return await this.createAsistencia(
+                    cedula,
+                    longitud,
+                    latitud
+                );
+            }
+
+            // -----------------------------
+            // Usuario sin embedding
+            // -----------------------------
+            const formData = new FormData();
+
+            formData.append(
+                'image',
+                imagen.buffer,
+                {
+                    filename: imagen.originalname,
+                    contentType: imagen.mimetype,
+                },
+            );
+
+            const respuesta = await axios.post(
+                'http://127.0.0.1:5000/register',
+                formData,
+                {
+                    headers: formData.getHeaders(),
+                },
+            );
+
+            const resultado = respuesta.data;
+
+            if (resultado.tipo !== 'success') {
+                return resultado;
+            }
+
+            usuario.embedding = resultado.datos.embedding;
+
+            await this.usuariosRepository.save(usuario);
+
+            return await this.createAsistencia(
+                cedula,
+                longitud,
+                latitud
+            );
+        } catch (error) {
+
+            console.error(error);
+
+            return {
+                tipo: 'error',
+                mensaje: 'Error al verificar el rostro'
+            };
         }
     }
 }
