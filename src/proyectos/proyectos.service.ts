@@ -105,10 +105,40 @@ export class ProyectosService {
         }
     }
 
+    async EliminarUsuario(id: number): Promise<tipoRespuesta> {
+        try {
+            await this.usuariosRepository.delete({ id })
+            return {
+                tipo: 'success',
+                mensaje: 'Usuario eliminado correctamente'
+            }
+        } catch (error) {
+            return {
+                tipo: 'error',
+                mensaje: 'No se pudo eliminar el usuario'
+            }
+        }
+    }
+
+    async actualizarUsuario(usuario: Usuarios): Promise<tipoRespuesta> {
+        try {
+            await this.usuariosRepository.save(usuario)
+            return {
+                tipo: 'success',
+                mensaje: 'Usuario actualizado con éxito'
+            }
+        } catch (error) {
+            return {
+                tipo: 'error',
+                mensaje: 'No se pudo actualizar el usuario'
+            }
+        }
+    }
+
     async createAsistencia(cedula: string, longitud: number, latitud: number): Promise<tipoRespuesta> {
         try {
             const usuario = await this.usuariosRepository.findOneBy({ cedula: cedula })
-            if (usuario) {
+            if (usuario && usuario.estado === 1) {
                 const nuevoRegistro: Partial<Asistencia> = {
                     usuario: usuario.id,
                     registro: new Date(),
@@ -143,7 +173,7 @@ export class ProyectosService {
             }
             return {
                 tipo: 'error',
-                mensaje: 'No se encontró el usuario'
+                mensaje: 'No se encontró tu usuario o te encuentras desactivado del sistema'
             }
         } catch (error) {
             console.log(error)

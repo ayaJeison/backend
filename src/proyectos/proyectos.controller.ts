@@ -32,6 +32,18 @@ export class ProyectosController {
     }
 
     @UseGuards(AuthGuard)
+    @Post('eliminar-usuario')
+    async eliminarUsuario(@Body() datos: { id: number }): Promise<tipoRespuesta> {
+        return await this.proyectosService.EliminarUsuario(datos.id)
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('actualizar-usuario')
+    async actualizarUsuario(@Body() datos: Usuarios): Promise<tipoRespuesta> {
+        return await this.proyectosService.actualizarUsuario(datos)
+    }
+
+    @UseGuards(AuthGuard)
     @Post('obtener-usuarios')
     async obtenerUsuarios(@Body() datos: { proyecto: number }): Promise<tipoRespuesta> {
         return await this.proyectosService.getUsuarios(datos.proyecto)

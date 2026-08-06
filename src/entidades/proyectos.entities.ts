@@ -62,6 +62,9 @@ export class Usuarios {
 
     @OneToMany(() => Asistencia, asistencia => asistencia.usuario)
     asistencias!: Asistencia[];
+
+    @Column({ type: 'int', default: 1 })
+    estado: number; //1 es habilitado, 2 desabilitado
 }
 
 @Entity('asistencia')
