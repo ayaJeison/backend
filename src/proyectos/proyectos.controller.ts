@@ -45,8 +45,8 @@ export class ProyectosController {
 
     @UseGuards(AuthGuard)
     @Post('obtener-usuarios')
-    async obtenerUsuarios(@Body() datos: { proyecto: number }): Promise<tipoRespuesta> {
-        return await this.proyectosService.getUsuarios(datos.proyecto)
+    async obtenerUsuarios(@Body() datos: { proyecto: number, fechaInicio: Date, fechaFin: Date }): Promise<tipoRespuesta> {
+        return await this.proyectosService.getUsuarios(datos.proyecto, datos.fechaInicio, datos.fechaFin)
     }
 
     @Post('crear-asistencia')

@@ -83,4 +83,7 @@ export class Asistencia {
 
     @Column({ type: 'json', nullable: true })
     ubicacion: { longitud: number, latitud: number }
+
+    @Column({ type: 'int', default: 1 })
+    tipo: number; //1 es entrada, 2 es salida
 }

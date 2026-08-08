@@ -67,20 +67,43 @@ export class ProyectosService {
         }
     }
 
-    async getUsuarios(proyecto: number): Promise<tipoRespuesta> {
+    async getUsuarios(
+        proyecto: number,
+        fechaInicio: Date,
+        fechaFin: Date
+    ): Promise<tipoRespuesta> {
         try {
-            const usuarios = await this.usuariosRepository.find({ where: { proyecto: { id: proyecto } }, relations: { asistencias: true } })
+            const inicio = new Date(fechaInicio);
+            inicio.setHours(0, 0, 0, 0);
+
+            const fin = new Date(fechaFin);
+            fin.setHours(23, 59, 59, 999);
+            const usuarios = await this.usuariosRepository
+                .createQueryBuilder('usuario')
+                .leftJoinAndSelect(
+                    'usuario.asistencias',
+                    'asistencia',
+                    'asistencia.registro BETWEEN :fechaInicio AND :fechaFin',
+                    {
+                        fechaInicio: inicio,
+                        fechaFin: fin
+                    }
+                )
+                .where('usuario.proyecto = :proyecto', { proyecto })
+                .getMany();
+
             return {
                 tipo: 'success',
                 mensaje: 'usuarios obtenidos',
                 datos: usuarios
-            }
+            };
         } catch (error) {
-            console.log(error)
+            console.log(error);
+
             return {
                 tipo: 'error',
                 mensaje: 'Error al obtener los usuarios'
-            }
+            };
         }
     }
 
@@ -142,7 +165,8 @@ export class ProyectosService {
                 const nuevoRegistro: Partial<Asistencia> = {
                     usuario: usuario.id,
                     registro: new Date(),
-                    ubicacion: { longitud, latitud }
+                    ubicacion: { longitud, latitud },
+                    tipo: 1
                 }
                 const inicioDia = new Date();
                 inicioDia.setHours(0, 0, 0, 0);
@@ -154,12 +178,20 @@ export class ProyectosService {
                     where: {
                         usuario: { id: usuario.id },
                         registro: Between(inicioDia, finDia),
+                    },
+                    order: {
+                        registro: 'DESC'
                     }
                 });
                 if (asistencia) {
+                    nuevoRegistro.tipo = asistencia.tipo === 1 ? 2 : 1;
+                    await this.asistenciaRepository.save(nuevoRegistro);
                     return {
-                        tipo: 'error',
-                        mensaje: 'Ya existe una asistencia registrada para el usuario'
+                        tipo: 'success',
+                        mensaje: 'Se ha registrado tu salida con éxito',
+                        datos: {
+                            nombre: usuario.nombre
+                        }
                     }
                 }
                 await this.asistenciaRepository.save(nuevoRegistro)
