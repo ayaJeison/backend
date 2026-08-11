@@ -5,6 +5,10 @@ import { Asistencia, Proyectos, Usuarios } from '../entidades/proyectos.entities
 import { tipoRespuesta } from '../interfaces';
 import axios from 'axios';
 import FormData from 'form-data';
+import * as ExcelJS from 'exceljs';
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ProyectosService {
@@ -16,6 +20,58 @@ export class ProyectosService {
         @InjectRepository(Asistencia)
         private readonly asistenciaRepository: Repository<Asistencia>
     ) { }
+
+    private readonly carpetaAsistencias = path.join(
+        process.cwd(),
+        'uploads',
+        'asistencias'
+    );
+
+    async guardarImagen(
+        imagen: Express.Multer.File,
+        cedula: string,
+    ): Promise<string> {
+
+        const ahora = new Date();
+
+        const año = ahora.getFullYear();
+        const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+
+        const carpeta = path.join(
+            this.carpetaAsistencias,
+            String(año),
+            mes
+        );
+
+        // Crear carpeta si no existe
+        await fs.mkdir(carpeta, {
+            recursive: true
+        });
+
+        const extension = path.extname(imagen.originalname) || '.jpg';
+
+        const nombreArchivo = `${cedula}_${randomUUID()}${extension}`;
+
+        const rutaCompleta = path.join(
+            carpeta,
+            nombreArchivo
+        );
+
+        await fs.writeFile(
+            rutaCompleta,
+            imagen.buffer
+        );
+
+        // Retornamos la ruta relativa para poder guardarla en BD
+        return path.join(
+            'uploads',
+            'asistencias',
+            String(año),
+            mes,
+            nombreArchivo
+        );
+    }
+
 
 
     async obtenerProyectos(): Promise<tipoRespuesta> {
@@ -70,7 +126,8 @@ export class ProyectosService {
     async getUsuarios(
         proyecto: number,
         fechaInicio: Date,
-        fechaFin: Date
+        fechaFin: Date,
+        buscador?: string
     ): Promise<tipoRespuesta> {
         try {
             const inicio = new Date(fechaInicio);
@@ -78,8 +135,9 @@ export class ProyectosService {
 
             const fin = new Date(fechaFin);
             fin.setHours(23, 59, 59, 999);
-            const usuarios = await this.usuariosRepository
+            const query = this.usuariosRepository
                 .createQueryBuilder('usuario')
+
                 .leftJoinAndSelect(
                     'usuario.asistencias',
                     'asistencia',
@@ -89,8 +147,22 @@ export class ProyectosService {
                         fechaFin: fin
                     }
                 )
-                .where('usuario.proyecto = :proyecto', { proyecto })
-                .getMany();
+
+                .where('usuario.proyecto = :proyecto', {
+                    proyecto
+                });
+
+            if (buscador?.trim()) {
+                query.andWhere(
+                    `(LOWER(usuario.nombre) LIKE LOWER(:buscador)
+          OR LOWER(usuario.cedula) LIKE LOWER(:buscador))`,
+                    {
+                        buscador: `%${buscador.trim()}%`
+                    }
+                );
+            }
+
+            const usuarios = await query.getMany();
 
             return {
                 tipo: 'success',
@@ -158,20 +230,21 @@ export class ProyectosService {
         }
     }
 
-    async createAsistencia(cedula: string, longitud: number, latitud: number): Promise<tipoRespuesta> {
+    async createAsistencia(cedula: string, longitud: number, latitud: number, fecha?: Date, foto?: string): Promise<tipoRespuesta> {
         try {
             const usuario = await this.usuariosRepository.findOneBy({ cedula: cedula })
             if (usuario && usuario.estado === 1) {
                 const nuevoRegistro: Partial<Asistencia> = {
                     usuario: usuario.id,
-                    registro: new Date(),
+                    registro: fecha ? new Date(fecha) : new Date(),
                     ubicacion: { longitud, latitud },
-                    tipo: 1
+                    tipo: 1,
+                    foto: foto ? foto : ""
                 }
-                const inicioDia = new Date();
+                const inicioDia = fecha ? new Date(fecha) : new Date();
                 inicioDia.setHours(0, 0, 0, 0);
 
-                const finDia = new Date();
+                const finDia = fecha ? new Date(fecha) : new Date();
                 finDia.setHours(23, 59, 59, 999);
 
                 const asistencia = await this.asistenciaRepository.findOne({
@@ -235,6 +308,8 @@ export class ProyectosService {
                 };
             }
 
+            let imagenRuta = "";
+
             // -----------------------------
             // Usuario ya tiene embedding
             // -----------------------------
@@ -267,6 +342,10 @@ export class ProyectosService {
                 const resultado = respuesta.data;
 
                 if (resultado.tipo !== 'success') {
+                    imagenRuta = await this.guardarImagen(
+                        imagen,
+                        cedula
+                    );
                     return resultado;
                 }
 
@@ -280,7 +359,9 @@ export class ProyectosService {
                 return await this.createAsistencia(
                     cedula,
                     longitud,
-                    latitud
+                    latitud,
+                    undefined,
+                    imagenRuta
                 );
             }
 
@@ -309,17 +390,24 @@ export class ProyectosService {
             const resultado = respuesta.data;
 
             if (resultado.tipo !== 'success') {
+                imagenRuta = await this.guardarImagen(
+                    imagen,
+                    cedula
+                );
                 return resultado;
             }
 
             usuario.embedding = resultado.datos.embedding;
+            usuario.avatar = imagenRuta;
 
             await this.usuariosRepository.save(usuario);
 
             return await this.createAsistencia(
                 cedula,
                 longitud,
-                latitud
+                latitud,
+                undefined,
+                imagenRuta
             );
         } catch (error) {
 
@@ -329,6 +417,610 @@ export class ProyectosService {
                 tipo: 'error',
                 mensaje: 'Error al verificar el rostro'
             };
+        }
+    }
+
+    private formatearFecha(fecha: Date): string {
+
+        const dia = String(
+            fecha.getDate()
+        ).padStart(2, '0');
+
+        const mes = String(
+            fecha.getMonth() + 1
+        ).padStart(2, '0');
+
+        const año =
+            fecha.getFullYear();
+
+        return `${dia}/${mes}/${año}`;
+    }
+
+    private obtenerResumenAsistencias(
+        asistencias: Asistencia[]
+    ): {
+        texto: string;
+        minutos: number;
+    } {
+
+        if (!asistencias.length) {
+            return {
+                texto: '',
+                minutos: 0
+            };
+        }
+
+        const lineas: string[] = [];
+
+        let minutosTotales = 0;
+
+        for (let i = 0; i < asistencias.length; i++) {
+
+            const asistencia = asistencias[i];
+
+            if (asistencia.tipo !== 1) {
+                continue;
+            }
+
+            const entrada =
+                this.formatearHora(
+                    new Date(asistencia.registro)
+                );
+
+            const siguiente =
+                asistencias[i + 1];
+
+            if (
+                siguiente &&
+                siguiente.tipo === 2
+            ) {
+
+                const salida =
+                    this.formatearHora(
+                        new Date(siguiente.registro)
+                    );
+
+                const entradaDate =
+                    new Date(asistencia.registro);
+
+                const salidaDate =
+                    new Date(siguiente.registro);
+
+                const diferencia =
+                    (salidaDate.getTime() -
+                        entradaDate.getTime()) / 60000;
+
+                if (diferencia > 0) {
+                    minutosTotales += diferencia;
+                }
+
+                lineas.push(
+                    `${entrada} - ${salida}`
+                );
+
+            } else {
+
+                // Entrada sin salida
+                lineas.push(
+                    `${entrada} - SIN SALIDA`
+                );
+            }
+        }
+
+        if (minutosTotales > 0) {
+
+            lineas.push(
+                `Total: ${this.formatearMinutos(
+                    Math.round(minutosTotales)
+                )}`
+            );
+        }
+
+        return {
+            texto: lineas.join('\n'),
+            minutos: Math.round(minutosTotales)
+        };
+    }
+
+    private formatearHora(fecha: Date): string {
+
+        const horas = String(
+            fecha.getHours()
+        ).padStart(2, '0');
+
+        const minutos = String(
+            fecha.getMinutes()
+        ).padStart(2, '0');
+
+        return `${horas}:${minutos}`;
+    }
+
+    private calcularMinutosTrabajados(
+        asistencias: Asistencia[]
+    ): number {
+
+        let minutos = 0;
+
+        for (let i = 0; i < asistencias.length; i++) {
+
+            const asistencia = asistencias[i];
+
+            // Buscar únicamente entradas
+            if (asistencia.tipo !== 1) {
+                continue;
+            }
+
+            const siguiente = asistencias[i + 1];
+
+            // La entrada debe tener una salida inmediatamente después
+            if (
+                siguiente &&
+                siguiente.tipo === 2
+            ) {
+
+                const entrada =
+                    new Date(asistencia.registro).getTime();
+
+                const salida =
+                    new Date(siguiente.registro).getTime();
+
+                const diferencia =
+                    salida - entrada;
+
+                if (diferencia > 0) {
+                    minutos += diferencia / 60000;
+                }
+            }
+        }
+
+        return Math.round(minutos);
+    }
+
+    private formatearMinutos(
+        minutos: number
+    ): string {
+
+        const horas =
+            Math.floor(minutos / 60);
+
+        const minutosRestantes =
+            minutos % 60;
+
+        return `${String(horas).padStart(2, '0')}:${String(minutosRestantes).padStart(2, '0')}`;
+    }
+
+    private numeroColumnaExcel(
+        numero: number
+    ): string {
+
+        let resultado = '';
+
+        while (numero > 0) {
+
+            const residuo =
+                (numero - 1) % 26;
+
+            resultado =
+                String.fromCharCode(
+                    65 + residuo
+                ) + resultado;
+
+            numero =
+                Math.floor(
+                    (numero - 1) / 26
+                );
+        }
+
+        return resultado;
+    }
+
+    async descargarAsistencia(
+        desde: string,
+        hasta: string,
+        proyecto: number
+    ): Promise<Buffer> {
+
+        try {
+
+            // ---------------------------------------------------------
+            // 1. Crear rango de fechas
+            // ---------------------------------------------------------
+
+            const fechaDesde =
+                new Date(`${desde}T00:00:00`);
+
+            const fechaHasta =
+                new Date(`${hasta}T23:59:59`);
+
+
+            // ---------------------------------------------------------
+            // 2. Obtener usuarios del proyecto
+            // ---------------------------------------------------------
+
+            const usuarios =
+                await this.usuariosRepository.find({
+
+                    where: {
+                        proyecto: {
+                            id: proyecto
+                        }
+                    },
+
+                    relations: {
+                        asistencias: true
+                    }
+
+                });
+
+
+            // ---------------------------------------------------------
+            // 3. Filtrar y ordenar asistencias
+            // ---------------------------------------------------------
+
+            for (const usuario of usuarios) {
+
+                usuario.asistencias =
+                    usuario.asistencias
+
+                        .filter(asistencia => {
+
+                            const fecha =
+                                new Date(
+                                    asistencia.registro
+                                );
+
+                            return (
+                                fecha >= fechaDesde &&
+                                fecha <= fechaHasta
+                            );
+
+                        })
+
+                        .sort((a, b) =>
+                            new Date(a.registro).getTime() -
+                            new Date(b.registro).getTime()
+                        );
+            }
+
+
+            // ---------------------------------------------------------
+            // 4. Generar todos los días
+            // ---------------------------------------------------------
+
+            const dias: Date[] = [];
+
+            const fechaActual =
+                new Date(fechaDesde);
+
+            while (fechaActual <= fechaHasta) {
+
+                dias.push(
+                    new Date(fechaActual)
+                );
+
+                fechaActual.setDate(
+                    fechaActual.getDate() + 1
+                );
+            }
+
+
+            // ---------------------------------------------------------
+            // 5. Crear workbook
+            // ---------------------------------------------------------
+
+            const workbook =
+                new ExcelJS.Workbook();
+
+            workbook.creator = 'Sistema de Asistencia';
+            workbook.created = new Date();
+
+            const worksheet =
+                workbook.addWorksheet('Asistencia');
+
+
+            // ---------------------------------------------------------
+            // 6. Encabezados
+            // ---------------------------------------------------------
+
+            const encabezados = [
+                'ID',
+                'Nombre',
+                'Apellido',
+                'Cédula'
+            ];
+
+            for (const dia of dias) {
+
+                encabezados.push(
+                    this.formatearFecha(dia)
+                );
+            }
+
+            // Columna adicional
+            encabezados.push('TOTAL HORAS');
+
+
+            worksheet.addRow(encabezados);
+
+
+            // ---------------------------------------------------------
+            // 7. Estilo del encabezado
+            // ---------------------------------------------------------
+
+            const header =
+                worksheet.getRow(1);
+
+            header.height = 28;
+
+            header.eachCell(cell => {
+
+                cell.font = {
+                    bold: true,
+                    color: {
+                        argb: 'FFFFFFFF'
+                    },
+                    size: 10
+                };
+
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: {
+                        argb: 'FF263238'
+                    }
+                };
+
+                cell.alignment = {
+                    horizontal: 'center',
+                    vertical: 'middle',
+                    wrapText: true
+                };
+
+                cell.border = {
+                    bottom: {
+                        style: 'medium',
+                        color: {
+                            argb: 'FF1B1B1B'
+                        }
+                    }
+                };
+            });
+
+
+            // ---------------------------------------------------------
+            // 8. Agregar usuarios
+            // ---------------------------------------------------------
+
+            for (const usuario of usuarios) {
+
+                const fila: any[] = [
+                    usuario.id,
+                    usuario.nombre,
+                    usuario.apellido,
+                    usuario.cedula
+                ];
+
+                let minutosTotalesUsuario = 0;
+
+
+                // -----------------------------------------------------
+                // Recorrer días
+                // -----------------------------------------------------
+
+                for (const dia of dias) {
+
+                    const asistenciasDia =
+                        usuario.asistencias.filter(
+                            asistencia => {
+
+                                const fecha =
+                                    new Date(
+                                        asistencia.registro
+                                    );
+
+                                return (
+                                    fecha.getFullYear() ===
+                                    dia.getFullYear() &&
+
+                                    fecha.getMonth() ===
+                                    dia.getMonth() &&
+
+                                    fecha.getDate() ===
+                                    dia.getDate()
+                                );
+
+                            }
+                        );
+
+
+                    const resumen =
+                        this.obtenerResumenAsistencias(
+                            asistenciasDia
+                        );
+
+
+                    minutosTotalesUsuario +=
+                        resumen.minutos;
+
+
+                    fila.push(
+                        resumen.texto
+                    );
+                }
+
+
+                // -----------------------------------------------------
+                // Total del usuario
+                // -----------------------------------------------------
+
+                fila.push(
+                    this.formatearMinutos(
+                        minutosTotalesUsuario
+                    )
+                );
+
+
+                worksheet.addRow(fila);
+            }
+
+
+            // ---------------------------------------------------------
+            // 9. Ancho de columnas
+            // ---------------------------------------------------------
+
+            worksheet.getColumn(1).width = 8;
+
+            worksheet.getColumn(2).width = 20;
+
+            worksheet.getColumn(3).width = 20;
+
+            worksheet.getColumn(4).width = 16;
+
+
+            // Columnas de días
+
+            for (
+                let i = 5;
+                i <= encabezados.length - 1;
+                i++
+            ) {
+
+                worksheet.getColumn(i).width = 24;
+            }
+
+
+            // Total horas
+
+            worksheet.getColumn(
+                encabezados.length
+            ).width = 16;
+
+
+            // ---------------------------------------------------------
+            // 10. Estilo de las filas
+            // ---------------------------------------------------------
+
+            worksheet.eachRow(
+                (row, rowNumber) => {
+
+                    if (rowNumber === 1) {
+                        return;
+                    }
+
+                    row.height = 42;
+
+                    row.eachCell(
+                        (cell, columnNumber) => {
+
+                            cell.alignment = {
+                                vertical: 'middle',
+                                horizontal:
+                                    columnNumber <= 4
+                                        ? 'left'
+                                        : 'center',
+                                wrapText: true
+                            };
+
+                            cell.font = {
+                                size: 10,
+                                color: {
+                                    argb: 'FF263238'
+                                }
+                            };
+
+                            cell.border = {
+                                bottom: {
+                                    style: 'thin',
+                                    color: {
+                                        argb: 'FFE0E0E0'
+                                    }
+                                }
+                            };
+                        }
+                    );
+
+
+                    // Filas alternadas
+
+                    if (rowNumber % 2 === 0) {
+
+                        row.eachCell(cell => {
+
+                            cell.fill = {
+                                type: 'pattern',
+                                pattern: 'solid',
+                                fgColor: {
+                                    argb: 'FFF7F8F9'
+                                }
+                            };
+
+                        });
+                    }
+
+
+                    // Total horas
+
+                    const totalCell =
+                        row.getCell(
+                            encabezados.length
+                        );
+
+                    totalCell.font = {
+                        bold: true,
+                        size: 10,
+                        color: {
+                            argb: 'FF263238'
+                        }
+                    };
+                }
+            );
+
+
+            // ---------------------------------------------------------
+            // 11. Congelar encabezado
+            // ---------------------------------------------------------
+
+            worksheet.views = [
+                {
+                    state: 'frozen',
+                    xSplit: 4,
+                    ySplit: 1
+                }
+            ];
+
+
+            // ---------------------------------------------------------
+            // 12. Filtros
+            // ---------------------------------------------------------
+
+            worksheet.autoFilter = {
+                from: 'A1',
+                to: `${this.numeroColumnaExcel(
+                    encabezados.length
+                )}1`
+            };
+
+
+            // ---------------------------------------------------------
+            // 13. Generar Excel
+            // ---------------------------------------------------------
+
+            const buffer =
+                await workbook.xlsx.writeBuffer();
+
+            return Buffer.from(buffer);
+
+
+        } catch (error) {
+
+            console.error(
+                'Error generando Excel:',
+                error
+            );
+
+            throw new Error(
+                'Error al generar el archivo de asistencia'
+            );
         }
     }
 }

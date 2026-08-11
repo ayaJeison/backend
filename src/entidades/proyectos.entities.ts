@@ -46,7 +46,7 @@ export class Usuarios {
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     registro!: Date;
 
-    @Column({ type: 'varchar', length: 100 })
+    @Column({ type: 'varchar', length: 250 })
     avatar!: string
 
     @Column({ type: 'varchar', length: 100 })
@@ -86,4 +86,7 @@ export class Asistencia {
 
     @Column({ type: 'int', default: 1 })
     tipo: number; //1 es entrada, 2 es salida
+
+    @Column({ type: 'varchar', length: 250 })
+    foto!: string;
 }

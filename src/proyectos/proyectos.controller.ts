@@ -1,10 +1,11 @@
-import { Body, Controller, Post, Request, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Post, Request, UseGuards, UploadedFile, UseInterceptors, Res } from '@nestjs/common';
 import { ProyectosService } from './proyectos.service';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../authGuard';
 import { tipoRespuesta } from '../interfaces';
 import { Proyectos, Usuarios } from '../entidades/proyectos.entities';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 
 @SkipThrottle()
 @Controller('proyectos')
@@ -45,8 +46,14 @@ export class ProyectosController {
 
     @UseGuards(AuthGuard)
     @Post('obtener-usuarios')
-    async obtenerUsuarios(@Body() datos: { proyecto: number, fechaInicio: Date, fechaFin: Date }): Promise<tipoRespuesta> {
-        return await this.proyectosService.getUsuarios(datos.proyecto, datos.fechaInicio, datos.fechaFin)
+    async obtenerUsuarios(@Body() datos: { proyecto: number, fechaInicio: Date, fechaFin: Date, buscador?: string }): Promise<tipoRespuesta> {
+        return await this.proyectosService.getUsuarios(datos.proyecto, datos.fechaInicio, datos.fechaFin, datos.buscador)
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('crear-asistencia-admin')
+    async crearAsistenciaAdmin(@Body() datos: { cedula: string, longitud: number, latitud: number, fecha: Date }): Promise<tipoRespuesta> {
+        return await this.proyectosService.createAsistencia(datos.cedula, datos.longitud, datos.latitud, datos.fecha)
     }
 
     @Post('crear-asistencia')
@@ -68,4 +75,35 @@ export class ProyectosController {
             Number(datos.latitud),
         );
     }
+
+    @UseGuards(AuthGuard)
+    @Post('descargar-asistencia')
+    async descargarAsistencia(
+        @Body() datos: {
+            desde: string;
+            hasta: string;
+            proyecto: number;
+        },
+        @Res() res: Response
+    ) {
+        const buffer = await this.proyectosService.descargarAsistencia(
+            datos.desde,
+            datos.hasta,
+            datos.proyecto
+        );
+
+        res.set({
+            'Content-Type':
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+
+            'Content-Disposition':
+                'attachment; filename="asistencia.xlsx"',
+
+            'Content-Length':
+                buffer.length.toString()
+        });
+
+        return res.send(buffer);
+    }
+
 }
