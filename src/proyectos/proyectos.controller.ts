@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Request, UseGuards, UploadedFile, UseInterceptors, Res } from '@nestjs/common';
+import { Body, Controller, Post, Request, UseGuards, UploadedFile, UseInterceptors, Res, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { ProyectosService } from './proyectos.service';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../authGuard';
@@ -104,6 +104,36 @@ export class ProyectosController {
         });
 
         return res.send(buffer);
+    }
+
+    @Get('imagen/:id')
+    @UseGuards(AuthGuard)
+    async obtenerImagenAsistencia(
+        @Param('id', ParseIntPipe) id: number,
+        @Res() res: Response,
+    ) {
+
+        const buffer = await this.proyectosService.obtenerImagenAsistencia(id);
+        res.set({
+            'Content-Type': 'image/jpeg',
+            'Content-Length': buffer.length.toString()
+        });
+        res.send(buffer);
+    }
+
+    @Get('usuario/:id')
+    @UseGuards(AuthGuard)
+    async obtenerImagenUsuario(
+        @Param('id', ParseIntPipe) id: number,
+        @Res() res: Response,
+    ) {
+
+        const buffer = await this.proyectosService.obtenerImagenUsuario(id);
+        res.set({
+            'Content-Type': 'image/jpeg',
+            'Content-Length': buffer.length.toString()
+        });
+        res.send(buffer);
     }
 
 }

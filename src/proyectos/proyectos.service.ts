@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
 import { Asistencia, Proyectos, Usuarios } from '../entidades/proyectos.entities';
@@ -62,6 +62,7 @@ export class ProyectosService {
             imagen.buffer
         );
 
+        console.log('Se guardó la imagen')
         // Retornamos la ruta relativa para poder guardarla en BD
         return path.join(
             'uploads',
@@ -342,10 +343,6 @@ export class ProyectosService {
                 const resultado = respuesta.data;
 
                 if (resultado.tipo !== 'success') {
-                    imagenRuta = await this.guardarImagen(
-                        imagen,
-                        cedula
-                    );
                     return resultado;
                 }
 
@@ -355,6 +352,11 @@ export class ProyectosService {
                         mensaje: 'El rostro no coincide con el usuario.'
                     };
                 }
+
+                imagenRuta = await this.guardarImagen(
+                    imagen,
+                    cedula
+                );
 
                 return await this.createAsistencia(
                     cedula,
@@ -390,12 +392,13 @@ export class ProyectosService {
             const resultado = respuesta.data;
 
             if (resultado.tipo !== 'success') {
-                imagenRuta = await this.guardarImagen(
-                    imagen,
-                    cedula
-                );
                 return resultado;
             }
+
+            imagenRuta = await this.guardarImagen(
+                imagen,
+                cedula
+            );
 
             usuario.embedding = resultado.datos.embedding;
             usuario.avatar = imagenRuta;
@@ -1021,6 +1024,74 @@ export class ProyectosService {
             throw new Error(
                 'Error al generar el archivo de asistencia'
             );
+        }
+    }
+
+    async obtenerImagenAsistencia(id: number): Promise<Buffer> {
+
+        const asistencia = await this.asistenciaRepository.findOne({
+            where: {
+                id
+            },
+        });
+
+        if (!asistencia || !asistencia.foto) {
+            throw new NotFoundException(
+                'La imagen no existe'
+            );
+        }
+
+        const ruta = path.join(
+            process.cwd(),
+            asistencia.foto
+        );
+
+        try {
+
+            await fs.access(ruta);
+
+            return await fs.readFile(ruta);
+
+        } catch {
+
+            throw new NotFoundException(
+                'El archivo no existe'
+            );
+
+        }
+    }
+
+    async obtenerImagenUsuario(id: number): Promise<Buffer> {
+
+        const usuario = await this.usuariosRepository.findOne({
+            where: {
+                id
+            },
+        });
+
+        if (!usuario || !usuario.avatar) {
+            throw new NotFoundException(
+                'La imagen no existe'
+            );
+        }
+
+        const ruta = path.join(
+            process.cwd(),
+            usuario.avatar
+        );
+
+        try {
+
+            await fs.access(ruta);
+
+            return await fs.readFile(ruta);
+
+        } catch {
+
+            throw new NotFoundException(
+                'El archivo no existe'
+            );
+
         }
     }
 }
