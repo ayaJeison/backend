@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
-import { Asistencia, Proyectos, Usuarios } from '../entidades/proyectos.entities';
+import { Asistencia, Cargo, Proyectos, Usuarios } from '../entidades/proyectos.entities';
 import { tipoRespuesta } from '../interfaces';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -18,8 +18,44 @@ export class ProyectosService {
         @InjectRepository(Usuarios)
         private readonly usuariosRepository: Repository<Usuarios>,
         @InjectRepository(Asistencia)
-        private readonly asistenciaRepository: Repository<Asistencia>
+        private readonly asistenciaRepository: Repository<Asistencia>,
+        @InjectRepository(Cargo)
+        private readonly cargoRepository: Repository<Cargo>,
+
     ) { }
+
+    async crearCargo(cargo: Partial<Cargo>): Promise<tipoRespuesta> {
+        try {
+            await this.cargoRepository.save(cargo)
+            return {
+                tipo: 'success',
+                mensaje: 'Cargo creado con éxito'
+            }
+        } catch (error) {
+            console.log(error)
+            return {
+                tipo: 'error',
+                mensaje: 'Error en el servidor, intenta de nuevo'
+            }
+        }
+    }
+
+    async obtenerCargos(proyecto: number): Promise<tipoRespuesta> {
+        try {
+            const cargos = await this.cargoRepository.find({ where: { proyecto: { id: proyecto } } })
+            return {
+                tipo: 'success',
+                mensaje: 'Cargos obtenidos',
+                datos: cargos
+            }
+        } catch (error) {
+            console.log(error)
+            return {
+                tipo: 'error',
+                mensaje: 'Error al obtener los cargos'
+            }
+        }
+    }
 
     private readonly carpetaAsistencias = path.join(
         process.cwd(),
@@ -80,7 +116,10 @@ export class ProyectosService {
             const proyectos = await this.proyectosRepository.find({
                 relations: {
                     admin: true,
-                    usuarios: true
+                    usuarios: {
+                        cargo: true
+                    },
+                    cargo: true
                 }
             })
             if (proyectos) {

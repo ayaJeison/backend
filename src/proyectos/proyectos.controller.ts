@@ -3,7 +3,7 @@ import { ProyectosService } from './proyectos.service';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../authGuard';
 import { tipoRespuesta } from '../interfaces';
-import { Proyectos, Usuarios } from '../entidades/proyectos.entities';
+import { Cargo, Proyectos, Usuarios } from '../entidades/proyectos.entities';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 
@@ -13,6 +13,19 @@ export class ProyectosController {
     constructor(
         private readonly proyectosService: ProyectosService
     ) { }
+
+    @UseGuards(AuthGuard)
+    @Post('crear-cargo')
+    async CrearCargo(@Body() datos: Partial<Cargo>): Promise<tipoRespuesta> {
+        return await this.proyectosService.crearCargo(datos)
+    }
+
+
+    @UseGuards(AuthGuard)
+    @Post('obtener-cargos')
+    async ObtenerCargo(@Body() datos: { proyecto: number }): Promise<tipoRespuesta> {
+        return await this.proyectosService.obtenerCargos(datos.proyecto)
+    }
 
     @UseGuards(AuthGuard)
     @Post('crear')

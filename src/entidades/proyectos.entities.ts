@@ -21,6 +21,25 @@ export class Proyectos {
 
     @OneToMany(() => Usuarios, usuario => usuario.proyecto)
     usuarios!: Usuarios[];
+
+    @OneToMany(() => Cargo, cargo => cargo.proyecto)
+    cargo!: Cargo[];
+}
+
+@Entity('cargo')
+export class Cargo {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column({ type: 'varchar', length: 100 })
+    nombre!: string;
+
+    @OneToMany(() => Usuarios, usuario => usuario.proyecto)
+    usuarios!: Usuarios[];
+
+    @ManyToOne(() => Proyectos, proyecto => proyecto.usuarios)
+    @JoinColumn({ name: 'proyecto', referencedColumnName: 'id' })
+    proyecto!: Proyectos;
 }
 
 @Entity('usuarios')
@@ -65,6 +84,10 @@ export class Usuarios {
 
     @Column({ type: 'int', default: 1 })
     estado: number; //1 es habilitado, 2 desabilitado
+
+    @ManyToOne(() => Cargo, cargo => cargo.usuarios)
+    @JoinColumn({ name: 'cargo', referencedColumnName: 'id' })
+    cargo!: Cargo;
 }
 
 @Entity('asistencia')
