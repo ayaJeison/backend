@@ -20,6 +20,11 @@ export class ProyectosController {
         return await this.proyectosService.crearCargo(datos)
     }
 
+    @UseGuards(AuthGuard)
+    @Post('eliminar-cargo')
+    async EliminarCargo(@Body() datos: { id: number }): Promise<tipoRespuesta> {
+        return await this.proyectosService.eliminarCargo(datos.id)
+    }
 
     @UseGuards(AuthGuard)
     @Post('obtener-cargos')
@@ -88,6 +93,36 @@ export class ProyectosController {
             Number(datos.latitud),
         );
     }
+
+    @UseGuards(AuthGuard)
+    @Post('crear-embedding')
+    @UseInterceptors(FileInterceptor('imagen'))
+    async crearEmbedding(
+        @UploadedFile() imagen: Express.Multer.File,
+        @Body() datos: { cedula: string },
+    ): Promise<tipoRespuesta> {
+        return await this.proyectosService.crearEmbedding(
+            imagen,
+            datos.cedula,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('crear-asistencia-reconocimiento')
+    @UseInterceptors(FileInterceptor('imagen'))
+    async crearAsistenciaReconocimiento(
+        @UploadedFile() imagen: Express.Multer.File,
+        @Body() datos: { longitud: string; latitud: string, proyecto: string },
+    ): Promise<tipoRespuesta> {
+        return await this.proyectosService.crearAsistenciaReconocimiento(
+            imagen,
+            Number(datos.longitud),
+            Number(datos.latitud),
+            Number(datos.proyecto),
+        );
+    }
+
+
 
     @UseGuards(AuthGuard)
     @Post('descargar-asistencia')

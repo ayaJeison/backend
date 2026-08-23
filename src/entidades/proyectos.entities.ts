@@ -34,7 +34,7 @@ export class Cargo {
     @Column({ type: 'varchar', length: 100 })
     nombre!: string;
 
-    @OneToMany(() => Usuarios, usuario => usuario.proyecto)
+    @OneToMany(() => Usuarios, (usuario) => usuario.cargo)
     usuarios!: Usuarios[];
 
     @ManyToOne(() => Proyectos, proyecto => proyecto.usuarios)

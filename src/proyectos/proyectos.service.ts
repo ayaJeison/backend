@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, IsNull, Not, Repository } from 'typeorm';
 import { Asistencia, Cargo, Proyectos, Usuarios } from '../entidades/proyectos.entities';
 import { tipoRespuesta } from '../interfaces';
 import axios from 'axios';
@@ -40,9 +40,32 @@ export class ProyectosService {
         }
     }
 
+    async eliminarCargo(cargo: number): Promise<tipoRespuesta> {
+        try {
+            await this.cargoRepository.delete(cargo)
+            return {
+                tipo: 'success',
+                mensaje: 'Cargo eliminado con éxito'
+            }
+        } catch (error) {
+            console.log(error)
+            return {
+                tipo: 'error',
+                mensaje: 'Error en el servidor, intenta de nuevo'
+            }
+        }
+    }
+
     async obtenerCargos(proyecto: number): Promise<tipoRespuesta> {
         try {
-            const cargos = await this.cargoRepository.find({ where: { proyecto: { id: proyecto } } })
+            const cargos = await this.cargoRepository.find(
+                {
+                    where: { proyecto: { id: proyecto } },
+                    relations: {
+                        usuarios: true
+                    }
+                }
+            )
             return {
                 tipo: 'success',
                 mensaje: 'Cargos obtenidos',
@@ -119,7 +142,9 @@ export class ProyectosService {
                     usuarios: {
                         cargo: true
                     },
-                    cargo: true
+                    cargo: {
+                        usuarios: true
+                    }
                 }
             })
             if (proyectos) {
@@ -175,9 +200,17 @@ export class ProyectosService {
 
             const fin = new Date(fechaFin);
             fin.setHours(23, 59, 59, 999);
-            const query = this.usuariosRepository
-                .createQueryBuilder('usuario')
 
+            const query = this.cargoRepository
+                .createQueryBuilder('cargo')
+
+                // Cargo -> Usuarios
+                .leftJoinAndSelect(
+                    'cargo.usuarios',
+                    'usuario'
+                )
+
+                // Usuario -> Asistencias
                 .leftJoinAndSelect(
                     'usuario.asistencias',
                     'asistencia',
@@ -188,27 +221,31 @@ export class ProyectosService {
                     }
                 )
 
-                .where('usuario.proyecto = :proyecto', {
+                // Cargo -> Proyecto
+                .where('cargo.proyecto = :proyecto', {
                     proyecto
                 });
 
             if (buscador?.trim()) {
                 query.andWhere(
-                    `(LOWER(usuario.nombre) LIKE LOWER(:buscador)
-          OR LOWER(usuario.cedula) LIKE LOWER(:buscador))`,
+                    `(
+                    LOWER(usuario.nombre) LIKE LOWER(:buscador)
+                    OR LOWER(usuario.cedula) LIKE LOWER(:buscador)
+                )`,
                     {
                         buscador: `%${buscador.trim()}%`
                     }
                 );
             }
 
-            const usuarios = await query.getMany();
+            const cargos = await query.getMany();
 
             return {
                 tipo: 'success',
                 mensaje: 'usuarios obtenidos',
-                datos: usuarios
+                datos: cargos
             };
+
         } catch (error) {
             console.log(error);
 
@@ -270,61 +307,214 @@ export class ProyectosService {
         }
     }
 
-    async createAsistencia(cedula: string, longitud: number, latitud: number, fecha?: Date, foto?: string): Promise<tipoRespuesta> {
+    async createAsistencia(
+        cedula: string,
+        longitud: number,
+        latitud: number,
+        fecha?: Date,
+        foto?: string
+    ): Promise<tipoRespuesta> {
+        try {
+            const usuario = await this.usuariosRepository.findOneBy({
+                cedula: cedula
+            });
+
+            if (!usuario || usuario.estado !== 1) {
+                return {
+                    tipo: 'error',
+                    mensaje: 'No se encontró tu usuario o te encuentras desactivado del sistema'
+                };
+            }
+
+            // Fecha/hora del nuevo registro
+            const registroActual = fecha ? new Date(fecha) : new Date();
+
+            // Inicio y fin del día
+            const inicioDia = new Date(registroActual);
+            inicioDia.setHours(0, 0, 0, 0);
+
+            const finDia = new Date(registroActual);
+            finDia.setHours(23, 59, 59, 999);
+
+            // Buscar el último registro del usuario para ese día
+            const asistencia = await this.asistenciaRepository.findOne({
+                where: {
+                    usuario: { id: usuario.id },
+                    registro: Between(inicioDia, finDia),
+                },
+                order: {
+                    registro: 'DESC'
+                }
+            });
+
+            // --------------------------------------------------
+            // Validar los 10 minutos
+            // --------------------------------------------------
+            if (asistencia) {
+                const diferenciaMilisegundos =
+                    registroActual.getTime() - new Date(asistencia.registro).getTime();
+
+                const diferenciaMinutos =
+                    diferenciaMilisegundos / (1000 * 60);
+
+                if (diferenciaMinutos < 10) {
+                    const minutosRestantes = Math.ceil(10 - diferenciaMinutos);
+
+                    return {
+                        tipo: 'info',
+                        mensaje: `Debes esperar al menos 10 minutos entre registros. Intenta nuevamente en ${minutosRestantes} minuto(s).`
+                    };
+                }
+            }
+
+            // --------------------------------------------------
+            // Crear nuevo registro
+            // --------------------------------------------------
+            const nuevoRegistro: Partial<Asistencia> = {
+                usuario: usuario.id,
+                registro: registroActual,
+                ubicacion: {
+                    longitud,
+                    latitud
+                },
+                tipo: asistencia
+                    ? (asistencia.tipo === 1 ? 2 : 1)
+                    : 1,
+                foto: foto ?? ""
+            };
+
+            await this.asistenciaRepository.save(nuevoRegistro);
+
+            return {
+                tipo: 'success',
+                mensaje: asistencia
+                    ? 'Se ha registrado tu salida con éxito'
+                    : 'Asistencia registrada con éxito',
+                datos: {
+                    nombre: usuario.nombre
+                }
+            };
+
+        } catch (error) {
+            console.log(error);
+
+            return {
+                tipo: 'error',
+                mensaje: 'Error en el sistema'
+            };
+        }
+    }
+
+    async crearEmbedding(
+        imagen: Express.Multer.File,
+        cedula: string
+    ): Promise<tipoRespuesta> {
         try {
             const usuario = await this.usuariosRepository.findOneBy({ cedula: cedula })
             if (usuario && usuario.estado === 1) {
-                const nuevoRegistro: Partial<Asistencia> = {
-                    usuario: usuario.id,
-                    registro: fecha ? new Date(fecha) : new Date(),
-                    ubicacion: { longitud, latitud },
-                    tipo: 1,
-                    foto: foto ? foto : ""
-                }
-                const inicioDia = fecha ? new Date(fecha) : new Date();
-                inicioDia.setHours(0, 0, 0, 0);
-
-                const finDia = fecha ? new Date(fecha) : new Date();
-                finDia.setHours(23, 59, 59, 999);
-
-                const asistencia = await this.asistenciaRepository.findOne({
-                    where: {
-                        usuario: { id: usuario.id },
-                        registro: Between(inicioDia, finDia),
+                const formData = new FormData();
+                formData.append(
+                    'image',
+                    imagen.buffer,
+                    {
+                        filename: imagen.originalname,
+                        contentType: imagen.mimetype,
                     },
-                    order: {
-                        registro: 'DESC'
-                    }
-                });
-                if (asistencia) {
-                    nuevoRegistro.tipo = asistencia.tipo === 1 ? 2 : 1;
-                    await this.asistenciaRepository.save(nuevoRegistro);
-                    return {
-                        tipo: 'success',
-                        mensaje: 'Se ha registrado tu salida con éxito',
-                        datos: {
-                            nombre: usuario.nombre
-                        }
-                    }
+                );
+
+                const response = await this.registrarRostro(formData, usuario, imagen, cedula);
+
+                if (response.tipo !== 'success') {
+                    return response;
                 }
-                await this.asistenciaRepository.save(nuevoRegistro)
+
                 return {
                     tipo: 'success',
-                    mensaje: 'Asistencia registrada con éxito',
-                    datos: {
-                        nombre: usuario.nombre
-                    }
+                    mensaje: 'Rostro registrado correctamente'
                 }
             }
             return {
                 tipo: 'error',
-                mensaje: 'No se encontró tu usuario o te encuentras desactivado del sistema'
+                mensaje: 'No se encontró tu usuario'
             }
         } catch (error) {
             console.log(error)
             return {
                 tipo: 'error',
                 mensaje: 'Error en el sistema'
+            }
+        }
+    }
+
+    async crearAsistenciaReconocimiento(
+        imagen: Express.Multer.File,
+        longitud: number,
+        latitud: number,
+        proyecto: number
+    ): Promise<tipoRespuesta> {
+        try {
+            const usuariosConEmbedding = await this.usuariosRepository.find({
+                where: {
+                    embedding: Not(IsNull()),
+                    estado: 1,
+                    proyecto: { id: proyecto }
+                }
+            })
+
+            if (usuariosConEmbedding.length === 0) {
+                return {
+                    tipo: 'error',
+                    mensaje: 'No se encontraron usuarios con reconocimiento facial para el proyecto'
+                }
+            }
+
+            const formData = new FormData();
+            formData.append(
+                'image',
+                imagen.buffer,
+                {
+                    filename: imagen.originalname,
+                    contentType: imagen.mimetype,
+                },
+            );
+            formData.append(
+                'usuarios',
+                JSON.stringify(usuariosConEmbedding)
+            );
+
+            const respuesta = await axios.post(
+                'http://127.0.0.1:5000/validate',
+                formData,
+                {
+                    headers: formData.getHeaders(),
+                },
+            );
+
+            const resultado = respuesta.data;
+
+
+
+            if (resultado.tipo === "success") {
+                let imagenRuta = await this.guardarImagen(
+                    imagen,
+                    resultado.datos.usuario.cedula
+                );
+                return await this.createAsistencia(
+                    resultado.datos.usuario.cedula,
+                    longitud,
+                    latitud,
+                    undefined,
+                    imagenRuta
+                )
+            }
+            return resultado
+
+
+
+        } catch (error) {
+            return {
+                tipo: 'error',
+                mensaje: 'Error al registrar asistencia'
             }
         }
     }
@@ -348,7 +538,8 @@ export class ProyectosService {
                 };
             }
 
-            let imagenRuta = "";
+            let imagenRuta = ""
+
 
             // -----------------------------
             // Usuario ya tiene embedding
@@ -410,7 +601,6 @@ export class ProyectosService {
             // Usuario sin embedding
             // -----------------------------
             const formData = new FormData();
-
             formData.append(
                 'image',
                 imagen.buffer,
@@ -420,6 +610,35 @@ export class ProyectosService {
                 },
             );
 
+            const response = await this.registrarRostro(formData, usuario, imagen, cedula);
+
+            if (response.tipo !== 'success') {
+                return response;
+            }
+
+            imagenRuta = response.datos;
+
+            return await this.createAsistencia(
+                cedula,
+                longitud,
+                latitud,
+                undefined,
+                imagenRuta
+            );
+        } catch (error) {
+
+            console.error(error);
+
+            return {
+                tipo: 'error',
+                mensaje: 'Error al verificar el rostro'
+            };
+        }
+    }
+
+    private async registrarRostro(formData: FormData, usuario: Usuarios, imagen: Express.Multer.File, cedula: string): Promise<tipoRespuesta> {
+        try {
+            let imagenRuta = "";
             const respuesta = await axios.post(
                 'http://127.0.0.1:5000/register',
                 formData,
@@ -444,21 +663,17 @@ export class ProyectosService {
 
             await this.usuariosRepository.save(usuario);
 
-            return await this.createAsistencia(
-                cedula,
-                longitud,
-                latitud,
-                undefined,
-                imagenRuta
-            );
+            return {
+                tipo: 'success',
+                mensaje: 'Rostro registrado con éxito',
+                datos: imagenRuta
+            };
         } catch (error) {
-
-            console.error(error);
-
+            console.log(error)
             return {
                 tipo: 'error',
-                mensaje: 'Error al verificar el rostro'
-            };
+                mensaje: 'Error al registrar el rostro'
+            }
         }
     }
 
