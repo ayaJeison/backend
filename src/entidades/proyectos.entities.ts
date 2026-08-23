@@ -108,7 +108,7 @@ export class Asistencia {
     ubicacion: { longitud: number, latitud: number }
 
     @Column({ type: 'int', default: 1 })
-    tipo: number; //1 es entrada, 2 es salida
+    tipo: number; //1 es entrada, 2 es salida, 3 incapacidad, 4 permiso
 
     @Column({ type: 'varchar', length: 250 })
     foto!: string;
