@@ -70,13 +70,19 @@ export class ProyectosController {
 
     @UseGuards(AuthGuard)
     @Post('crear-asistencia-admin')
-    async crearAsistenciaAdmin(@Body() datos: { cedula: string, longitud: number, latitud: number, fecha: Date }): Promise<tipoRespuesta> {
-        return await this.proyectosService.createAsistencia(datos.cedula, datos.longitud, datos.latitud, datos.fecha)
+    async crearAsistenciaAdmin(@Body() datos: { cedula: string, longitud: number, latitud: number, fecha: Date, tipo?: number }): Promise<tipoRespuesta> {
+        return await this.proyectosService.createAsistencia(datos.cedula, datos.longitud, datos.latitud, datos.fecha, undefined, datos?.tipo)
     }
 
     @Post('crear-asistencia')
     async crearAsistencia(@Body() datos: { cedula: string, longitud: number, latitud: number }): Promise<tipoRespuesta> {
         return await this.proyectosService.createAsistencia(datos.cedula, datos.longitud, datos.latitud)
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('eliminar-asistencia')
+    async eliminarAsistencia(@Body() datos: { id: number }): Promise<tipoRespuesta> {
+        return await this.proyectosService.eliminarAsistencia(datos.id)
     }
 
     @Post('crear-asistencia-foto')

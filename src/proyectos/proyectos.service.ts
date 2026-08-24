@@ -312,7 +312,8 @@ export class ProyectosService {
         longitud: number,
         latitud: number,
         fecha?: Date,
-        foto?: string
+        foto?: string,
+        tipo?: number
     ): Promise<tipoRespuesta> {
         try {
             const usuario = await this.usuariosRepository.findOneBy({
@@ -382,6 +383,10 @@ export class ProyectosService {
                     : 1,
                 foto: foto ?? ""
             };
+
+            if (tipo) {
+                nuevoRegistro.tipo = tipo;
+            }
 
             await this.asistenciaRepository.save(nuevoRegistro);
 
@@ -636,6 +641,31 @@ export class ProyectosService {
         }
     }
 
+    async eliminarAsistencia(id: number): Promise<tipoRespuesta> {
+        try {
+            const asistencia = await this.asistenciaRepository.findOneBy({
+                id
+            });
+            if (!asistencia) {
+                return {
+                    tipo: 'error',
+                    mensaje: 'La asistencia no existe'
+                };
+            }
+            await this.asistenciaRepository.remove(asistencia);
+            return {
+                tipo: 'success',
+                mensaje: 'Asistencia eliminada con éxito'
+            };
+        } catch (error) {
+            console.error(error);
+            return {
+                tipo: 'error',
+                mensaje: 'Error al eliminar la asistencia'
+            };
+        }
+    }
+
     private async registrarRostro(formData: FormData, usuario: Usuarios, imagen: Express.Multer.File, cedula: string): Promise<tipoRespuesta> {
         try {
             let imagenRuta = "";
@@ -715,6 +745,25 @@ export class ProyectosService {
 
             const asistencia = asistencias[i];
 
+            // Incapacidad
+            if (asistencia.tipo === 3) {
+                lineas.push(
+                    `INCAPACIDAD`
+                );
+
+                continue;
+            }
+
+            // Permiso
+            if (asistencia.tipo === 4) {
+                lineas.push(
+                    `PERMISO`
+                );
+
+                continue;
+            }
+
+            // Solo procesar entradas
             if (asistencia.tipo !== 1) {
                 continue;
             }
@@ -765,7 +814,6 @@ export class ProyectosService {
         }
 
         if (minutosTotales > 0) {
-
             lineas.push(
                 `Total: ${this.formatearMinutos(
                     Math.round(minutosTotales)
